@@ -12,7 +12,7 @@ import Data.List.NonEmpty (NonEmpty, nonEmpty)
 import Data.Map qualified as M
 import Data.Maybe (mapMaybe)
 import Data.String.Interpolate (i)
-import Data.Text (Text, intercalate, pack, toLower, unlines, unwords)
+import Data.Text (Text, intercalate, pack, toLower, unwords)
 import Data.Text.Lazy qualified as L
 import Data.Text.Lazy.Encoding qualified as LE
 import Web.View.Types
@@ -43,11 +43,10 @@ renderLazyByteString = LE.encodeUtf8 . renderLazyText
 > renderText' () $ el bold "Hello"
 -}
 renderText' :: c -> View c () -> Text
-renderText' c u = intercalate "\n" content
+renderText' c u = mconcat content
  where
-  -- T.intercalate "\n" (content <> style css)
   content :: [Text]
-  content = map (unlines . renderContent indent) . (.contents) $ runView c addCss
+  content = fmap (mconcat . renderContent) . (.contents) $ runView c addCss
 
   addCss = do
     forM_ styleElement $ viewInsertContents . pure
@@ -59,14 +58,14 @@ renderText' c u = intercalate "\n" content
   styleElement :: Maybe Content
   styleElement = Node . Element "style" (Attributes [] [("type", "text/css")]) . pure . Text . intercalate "\n" . toList <$> css
 
-renderContent :: (Text -> Text) -> Content -> [Text]
-renderContent ind (Node t) = renderTag ind t
-renderContent _ (Text t) = [HE.text t]
-renderContent _ (Raw t) = [t]
+renderContent :: Content -> [Text]
+renderContent (Node t) = renderTag t
+renderContent (Text t) = [HE.text t]
+renderContent (Raw t) = [t]
 
 
-renderTag :: (Text -> Text) -> Element -> [Text]
-renderTag ind tag =
+renderTag :: Element -> [Text]
+renderTag tag =
   case tag.children of
     [] ->
       -- auto closing creates a bug in chrome. An auto-closed div
@@ -79,7 +78,7 @@ renderTag ind tag =
     _ ->
       mconcat
         [ [open <> htmlAtts (flatAttributes tag) <> ">"]
-        , ind <$> htmlChildren tag.children
+        , htmlChildren tag.children
         , [close]
         ]
  where
@@ -87,9 +86,7 @@ renderTag ind tag =
   close = "</" <> tag.name <> ">"
 
   htmlChildren :: [Content] -> [Text]
-  htmlChildren cts =
-    mconcat $
-      fmap (renderContent ind) cts
+  htmlChildren cts = mconcat $ fmap renderContent cts
 
   htmlAtts :: FlatAttributes -> Text
   htmlAtts (FlatAttributes []) = ""
@@ -125,11 +122,6 @@ renderCSS = mapMaybe renderClass . M.elems
 
   renderStyle :: StyleValue -> Text
   renderStyle (StyleValue v) = pack v
-
-
-indent :: Text -> Text
-indent t = "  " <> t
-
 
 -- | The css selector for this style
 selectorText :: Selector -> Text
